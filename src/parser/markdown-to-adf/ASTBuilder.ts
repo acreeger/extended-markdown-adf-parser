@@ -4,7 +4,7 @@
  * @author Extended ADF Parser
  */
 
-import { Token, TokenType, ADFMetadata } from './types.js';
+import { Token, TokenType, ADFMetadata, ListItemToken } from './types.js';
 import { ADFDocument, ADFNode, ADFMark } from '../../types/adf.types.js';
 import type { Root } from 'mdast';
 import type { AdfFenceNode } from '../remark/adf-from-markdown.js';
@@ -235,7 +235,38 @@ export class ASTBuilder {
     const listToken = token as any; // ListToken
     const isOrdered = listToken.ordered || false;
     const customAttrs = this.extractCustomAttributes(token.metadata);
-    
+
+    // Check if any child token has a checkbox (checked property)
+    const children = token.children || [];
+    const hasCheckbox = children.some((child: any) =>
+      (child as ListItemToken).checked !== undefined && (child as ListItemToken).checked !== null
+    );
+
+    // If checkbox list and not ordered, attempt taskList conversion
+    if (hasCheckbox && !isOrdered) {
+      // Validate all checkbox items have simple content (single paragraph child only)
+      const allSimple = children.every((child: any) => {
+        return this.isTokenItemSimple(child);
+      });
+
+      if (allSimple) {
+        return {
+          type: 'taskList',
+          attrs: { localId: crypto.randomUUID() },
+          content: children.map((child: any) => this.convertTaskItem(child as ListItemToken))
+        };
+      }
+      // Fall back to bulletList if any item has complex content
+      // Re-prepend checkbox syntax to content so it's not lost in the fallback path
+      for (const child of children) {
+        const itemToken = child as ListItemToken;
+        if (itemToken.checked !== undefined && itemToken.checked !== null) {
+          const prefix = itemToken.checked ? '[x] ' : '[ ] ';
+          itemToken.content = prefix + itemToken.content;
+        }
+      }
+    }
+
     const attrs: any = {};
     if (isOrdered && listToken.start && listToken.start !== 1) {
       attrs.order = listToken.start;
@@ -252,6 +283,42 @@ export class ASTBuilder {
     }
 
     return node;
+  }
+
+  /**
+   * Check if a token-path list item has simple content (single paragraph child only)
+   */
+  private isTokenItemSimple(token: Token): boolean {
+    if (!token.children || token.children.length === 0) return true;
+    // Simple: single paragraph child with no further block nesting
+    if (token.children.length === 1 && token.children[0].type === 'paragraph') return true;
+    // Complex: multiple children, or non-paragraph children (lists, code blocks, etc.)
+    return false;
+  }
+
+  /**
+   * Convert a ListItemToken with checked property to a taskItem ADF node (token path)
+   */
+  private convertTaskItem(token: ListItemToken): ADFNode {
+    const state = token.checked ? 'DONE' : 'TODO';
+
+    // Extract inline content from the single paragraph child
+    let content: ADFNode[] = [];
+    if (token.children && token.children.length === 1 && token.children[0].type === 'paragraph') {
+      const paragraphToken = token.children[0];
+      // Use inline tokens if available, otherwise parse content string
+      content = paragraphToken.children && paragraphToken.children.length > 0
+        ? this.convertInlineTokensToNodes(paragraphToken.children)
+        : this.convertInlineContent(paragraphToken.content);
+    } else if (token.content) {
+      content = this.convertInlineContent(token.content);
+    }
+
+    return {
+      type: 'taskItem',
+      attrs: { localId: crypto.randomUUID(), state },
+      content
+    };
   }
 
   private convertListItem(token: Token): ADFNode {
@@ -1628,10 +1695,52 @@ export class ASTBuilder {
   }
 
   private convertMdastList(node: any): ADFNode {
+    // Detect checkbox/task list: any child with checked !== null && checked !== undefined
+    if (!node.ordered && node.children?.some((child: any) => child.checked !== null && child.checked !== undefined)) {
+      // Validate all checkbox items have simple content (single paragraph child only)
+      const allSimple = node.children.every((child: any) => this.isCheckboxItemSimple(child));
+      if (allSimple) {
+        return {
+          type: 'taskList',
+          attrs: { localId: crypto.randomUUID() },
+          content: node.children.map((child: any) => this.convertMdastTaskItem(child))
+        };
+      }
+      // Fall back to bulletList if any item has complex content
+    }
+
     return {
       type: node.ordered ? 'orderedList' : 'bulletList',
       ...(node.start && node.start !== 1 && { attrs: { order: node.start } }),
       content: this.convertMdastNodesToADF(node.children)
+    };
+  }
+
+  /**
+   * Check if a checkbox list item has simple content (single paragraph child only).
+   * Items with multiple paragraphs, nested lists, code blocks, etc. cannot be taskItems
+   * since ADF taskItem only allows inline content.
+   */
+  private isCheckboxItemSimple(node: any): boolean {
+    if (!node.children || node.children.length === 0) return true;
+    return node.children.length === 1 && node.children[0].type === 'paragraph';
+  }
+
+  /**
+   * Convert an mdast listItem with checked state to an ADF taskItem.
+   * Extracts inline children from the first paragraph child since taskItem
+   * content is inline nodes directly (not wrapped in paragraph).
+   */
+  private convertMdastTaskItem(node: any): ADFNode {
+    const state = node.checked ? 'DONE' : 'TODO';
+    const inlineContent = node.children?.[0]?.children
+      ? this.convertMdastInlineNodes(node.children[0].children)
+      : [];
+
+    return {
+      type: 'taskItem',
+      attrs: { localId: crypto.randomUUID(), state },
+      content: inlineContent
     };
   }
 
@@ -2401,11 +2510,43 @@ export class ASTBuilder {
       };
     }
     
-    // 7. Bullet list
+    // 7. Checkbox task list (before regular bullet list)
+    const hasCheckboxPattern = lines.some(line => /^\s*[-*+]\s+\[(x|X| )\]\s/.test(line));
+    if (hasCheckboxPattern) {
+      // All items in this block must be simple single-line items for taskList
+      const allBulletLines = lines.filter(line => /^\s*[-*+]\s/.test(line));
+      const allSimple = allBulletLines.every(line => /^\s*[-*+]\s+\[(x|X| )\]\s/.test(line));
+
+      if (allSimple) {
+        const taskItems: ADFNode[] = [];
+
+        for (const line of lines) {
+          const taskMatch = line.match(/^\s*[-*+]\s+\[(x|X| )\]\s*(.*)$/);
+          if (taskMatch) {
+            const state = (taskMatch[1] === 'x' || taskMatch[1] === 'X') ? 'DONE' : 'TODO';
+            const itemContent = taskMatch[2] ? this.parseInlineContentWithSocialElements(taskMatch[2]) : [];
+            taskItems.push({
+              type: 'taskItem',
+              attrs: { localId: crypto.randomUUID(), state },
+              content: itemContent
+            });
+          }
+        }
+
+        return {
+          type: 'taskList',
+          attrs: { localId: crypto.randomUUID() },
+          content: taskItems
+        };
+      }
+      // Fall through to bulletList if items are complex
+    }
+
+    // 8. Bullet list
     const isBulletList = lines.some(line => /^\s*[-*+]\s/.test(line));
     if (isBulletList) {
       const listItems: ADFNode[] = [];
-      
+
       for (const line of lines) {
         const listMatch = line.match(/^\s*[-*+]\s+(.+)$/);
         if (listMatch) {
@@ -2426,13 +2567,13 @@ export class ASTBuilder {
       };
     }
     
-    // 8. Table
+    // 9. Table
     const isTableBlock = lines.some(line => /^\s*\|.*\|\s*$/.test(line));
     if (isTableBlock) {
       return this.parseTableFromLines(lines);
     }
-    
-    // 9. Default: paragraph
+
+    // 10. Default: paragraph
     return {
       type: 'paragraph',
       content: this.parseInlineContentWithSocialElements(blockContent)
