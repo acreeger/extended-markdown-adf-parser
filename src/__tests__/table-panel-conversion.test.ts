@@ -306,6 +306,212 @@ Installation completed successfully!
     });
   });
 
+  describe('Table inside Panel (parseTableFromLines code path)', () => {
+    it('should wrap table cell content in paragraph nodes when table is inside a panel', async () => {
+      const markdown = `
+~~~panel type=info title="Details"
+| Header | Value |
+|--------|-------|
+| key    | val   |
+~~~
+      `.trim();
+
+      const result = await parser.markdownToAdf(markdown);
+
+      // Top-level node should be a panel
+      expect(result.content).toHaveLength(1);
+      expect(result.content[0].type).toBe('panel');
+
+      const panel = result.content[0];
+
+      // Panel content should contain a table
+      const table = panel.content.find((node: any) => node.type === 'table');
+      expect(table).toBeDefined();
+      expect(table.content).toHaveLength(2); // header row + data row
+
+      // Header row
+      const headerRow = table.content[0];
+      expect(headerRow.type).toBe('tableRow');
+      expect(headerRow.content).toHaveLength(2);
+
+      // Header cells should be wrapped in paragraph nodes
+      expect(headerRow.content[0].type).toBe('tableHeader');
+      expect(headerRow.content[0].content[0].type).toBe('paragraph');
+      expect(headerRow.content[0].content[0].content[0].text).toBe('Header');
+
+      expect(headerRow.content[1].type).toBe('tableHeader');
+      expect(headerRow.content[1].content[0].type).toBe('paragraph');
+      expect(headerRow.content[1].content[0].content[0].text).toBe('Value');
+
+      // Data row
+      const dataRow = table.content[1];
+      expect(dataRow.type).toBe('tableRow');
+      expect(dataRow.content).toHaveLength(2);
+
+      // Data cells should be wrapped in paragraph nodes
+      expect(dataRow.content[0].type).toBe('tableCell');
+      expect(dataRow.content[0].content[0].type).toBe('paragraph');
+      expect(dataRow.content[0].content[0].content[0].text).toBe('key');
+
+      expect(dataRow.content[1].type).toBe('tableCell');
+      expect(dataRow.content[1].content[0].type).toBe('paragraph');
+      expect(dataRow.content[1].content[0].content[0].text).toBe('val');
+    });
+
+    it('should wrap table cell content in paragraph nodes for multi-row table inside a panel', async () => {
+      const markdown = `
+~~~panel type=warning title="Status"
+| Service | Status  | Uptime |
+|---------|---------|--------|
+| API     | Running | 99.9%  |
+| DB      | Stopped | 0%     |
+~~~
+      `.trim();
+
+      const result = await parser.markdownToAdf(markdown);
+
+      const panel = result.content[0];
+      expect(panel.type).toBe('panel');
+
+      const table = panel.content.find((node: any) => node.type === 'table');
+      expect(table).toBeDefined();
+      expect(table.content).toHaveLength(3); // header + 2 data rows
+
+      // Verify all header cells have paragraph wrapping
+      const headerRow = table.content[0];
+      expect(headerRow.content).toHaveLength(3);
+      for (const headerCell of headerRow.content) {
+        expect(headerCell.type).toBe('tableHeader');
+        expect(headerCell.content[0].type).toBe('paragraph');
+      }
+      expect(headerRow.content[0].content[0].content[0].text).toBe('Service');
+      expect(headerRow.content[1].content[0].content[0].text).toBe('Status');
+      expect(headerRow.content[2].content[0].content[0].text).toBe('Uptime');
+
+      // Verify all data cells have paragraph wrapping
+      const dataRow1 = table.content[1];
+      for (const cell of dataRow1.content) {
+        expect(cell.type).toBe('tableCell');
+        expect(cell.content[0].type).toBe('paragraph');
+      }
+      expect(dataRow1.content[0].content[0].content[0].text).toBe('API');
+      expect(dataRow1.content[1].content[0].content[0].text).toBe('Running');
+      expect(dataRow1.content[2].content[0].content[0].text).toBe('99.9%');
+
+      const dataRow2 = table.content[2];
+      for (const cell of dataRow2.content) {
+        expect(cell.type).toBe('tableCell');
+        expect(cell.content[0].type).toBe('paragraph');
+      }
+      expect(dataRow2.content[0].content[0].content[0].text).toBe('DB');
+      expect(dataRow2.content[1].content[0].content[0].text).toBe('Stopped');
+      expect(dataRow2.content[2].content[0].content[0].text).toBe('0%');
+    });
+  });
+
+  describe('Table inside Expand (parseTableFromLines code path)', () => {
+    it('should wrap table cell content in paragraph nodes when table is inside an expand', async () => {
+      const markdown = `
+~~~expand title="Click to expand"
+| Header | Value |
+|--------|-------|
+| key    | val   |
+~~~
+      `.trim();
+
+      const result = await parser.markdownToAdf(markdown);
+
+      // Top-level node should be an expand
+      expect(result.content).toHaveLength(1);
+      expect(result.content[0].type).toBe('expand');
+
+      const expand = result.content[0];
+
+      // Expand content should contain a table
+      const table = expand.content.find((node: any) => node.type === 'table');
+      expect(table).toBeDefined();
+      expect(table.content).toHaveLength(2); // header row + data row
+
+      // Header row
+      const headerRow = table.content[0];
+      expect(headerRow.type).toBe('tableRow');
+      expect(headerRow.content).toHaveLength(2);
+
+      // Header cells should be wrapped in paragraph nodes
+      expect(headerRow.content[0].type).toBe('tableHeader');
+      expect(headerRow.content[0].content[0].type).toBe('paragraph');
+      expect(headerRow.content[0].content[0].content[0].text).toBe('Header');
+
+      expect(headerRow.content[1].type).toBe('tableHeader');
+      expect(headerRow.content[1].content[0].type).toBe('paragraph');
+      expect(headerRow.content[1].content[0].content[0].text).toBe('Value');
+
+      // Data row
+      const dataRow = table.content[1];
+      expect(dataRow.type).toBe('tableRow');
+      expect(dataRow.content).toHaveLength(2);
+
+      // Data cells should be wrapped in paragraph nodes
+      expect(dataRow.content[0].type).toBe('tableCell');
+      expect(dataRow.content[0].content[0].type).toBe('paragraph');
+      expect(dataRow.content[0].content[0].content[0].text).toBe('key');
+
+      expect(dataRow.content[1].type).toBe('tableCell');
+      expect(dataRow.content[1].content[0].type).toBe('paragraph');
+      expect(dataRow.content[1].content[0].content[0].text).toBe('val');
+    });
+
+    it('should wrap table cell content in paragraph nodes for multi-row table inside an expand', async () => {
+      const markdown = `
+~~~expand title="Configuration"
+| Setting | Default | Description  |
+|---------|---------|--------------|
+| timeout | 30s     | Max wait     |
+| retries | 3       | Retry count  |
+~~~
+      `.trim();
+
+      const result = await parser.markdownToAdf(markdown);
+
+      const expand = result.content[0];
+      expect(expand.type).toBe('expand');
+
+      const table = expand.content.find((node: any) => node.type === 'table');
+      expect(table).toBeDefined();
+      expect(table.content).toHaveLength(3); // header + 2 data rows
+
+      // Verify all header cells have paragraph wrapping
+      const headerRow = table.content[0];
+      expect(headerRow.content).toHaveLength(3);
+      for (const headerCell of headerRow.content) {
+        expect(headerCell.type).toBe('tableHeader');
+        expect(headerCell.content[0].type).toBe('paragraph');
+      }
+      expect(headerRow.content[0].content[0].content[0].text).toBe('Setting');
+      expect(headerRow.content[1].content[0].content[0].text).toBe('Default');
+      expect(headerRow.content[2].content[0].content[0].text).toBe('Description');
+
+      // Verify all data cells have paragraph wrapping
+      const dataRow1 = table.content[1];
+      for (const cell of dataRow1.content) {
+        expect(cell.type).toBe('tableCell');
+        expect(cell.content[0].type).toBe('paragraph');
+      }
+      expect(dataRow1.content[0].content[0].content[0].text).toBe('timeout');
+      expect(dataRow1.content[1].content[0].content[0].text).toBe('30s');
+      expect(dataRow1.content[2].content[0].content[0].text).toBe('Max wait');
+
+      const dataRow2 = table.content[2];
+      for (const cell of dataRow2.content) {
+        expect(cell.type).toBe('tableCell');
+        expect(cell.content[0].type).toBe('paragraph');
+      }
+      expect(dataRow2.content[0].content[0].content[0].text).toBe('retries');
+      expect(dataRow2.content[1].content[0].content[0].text).toBe('3');
+      expect(dataRow2.content[2].content[0].content[0].text).toBe('Retry count');
+    });
+  });
+
   describe('Edge Cases', () => {
     it('should handle empty table cells', async () => {
       const markdown = `
