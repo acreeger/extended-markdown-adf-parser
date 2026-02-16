@@ -530,11 +530,11 @@ export class MarkdownToAdfEngine {
   private cleanupEmptyParagraphs(adf: ADFDocument): ADFDocument {
     const cleanupNode = (node: any): boolean => {
       // If this is a paragraph with only whitespace text nodes, remove it
-      if (node.type === 'paragraph' && node.content) {
-        const hasOnlyWhitespace = node.content.every((child: any) => 
+      if (node.type === 'paragraph' && node.content && node.content.length > 0) {
+        const hasOnlyWhitespace = node.content.every((child: any) =>
           child.type === 'text' && (!child.text || child.text.trim() === '')
         );
-        
+
         if (hasOnlyWhitespace) {
           return false; // Mark for removal
         }

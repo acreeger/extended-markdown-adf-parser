@@ -39,9 +39,11 @@ describe('Table and Panel Conversion Tests', () => {
       expect(headerRow.content[0].type).toBe('tableHeader');
       expect(headerRow.content[1].type).toBe('tableHeader');
       
-      // Check header content
-      expect(headerRow.content[0].content[0].text).toBe('Column 1');
-      expect(headerRow.content[1].content[0].text).toBe('Column 2');
+      // Check header content - cells wrap inline content in paragraph nodes per ADF spec
+      expect(headerRow.content[0].content[0].type).toBe('paragraph');
+      expect(headerRow.content[0].content[0].content[0].text).toBe('Column 1');
+      expect(headerRow.content[1].content[0].type).toBe('paragraph');
+      expect(headerRow.content[1].content[0].content[0].text).toBe('Column 2');
       
       // Data rows should be table cells
       const dataRow1 = table.content[1];
@@ -49,9 +51,42 @@ describe('Table and Panel Conversion Tests', () => {
       expect(dataRow1.content[0].type).toBe('tableCell');
       expect(dataRow1.content[1].type).toBe('tableCell');
       
-      // Check data content
-      expect(dataRow1.content[0].content[0].text).toBe('Data 1');
-      expect(dataRow1.content[1].content[0].text).toBe('Data 2');
+      // Check data content - cells wrap inline content in paragraph nodes per ADF spec
+      expect(dataRow1.content[0].content[0].type).toBe('paragraph');
+      expect(dataRow1.content[0].content[0].content[0].text).toBe('Data 1');
+      expect(dataRow1.content[1].content[0].type).toBe('paragraph');
+      expect(dataRow1.content[1].content[0].content[0].text).toBe('Data 2');
+    });
+
+    it('should wrap table cell content in paragraph nodes per ADF spec', async () => {
+      const markdown = `
+| a | b |
+|---|---|
+| c |   |
+      `.trim();
+
+      const result = await parser.markdownToAdf(markdown);
+      const table = result.content[0];
+
+      // Header cells should contain paragraph children
+      const headerRow = table.content[0];
+      expect(headerRow.content[0].type).toBe('tableHeader');
+      expect(headerRow.content[0].content[0].type).toBe('paragraph');
+      expect(headerRow.content[0].content[0].content[0].type).toBe('text');
+
+      expect(headerRow.content[1].type).toBe('tableHeader');
+      expect(headerRow.content[1].content[0].type).toBe('paragraph');
+      expect(headerRow.content[1].content[0].content[0].type).toBe('text');
+
+      // Data cells should contain paragraph children
+      const dataRow = table.content[1];
+      expect(dataRow.content[0].type).toBe('tableCell');
+      expect(dataRow.content[0].content[0].type).toBe('paragraph');
+      expect(dataRow.content[0].content[0].content[0].text).toBe('c');
+
+      // Empty cells should have paragraph with empty content
+      expect(dataRow.content[1].type).toBe('tableCell');
+      expect(dataRow.content[1].content[0].type).toBe('paragraph');
     });
 
     it('should NOT convert table to paragraph node with raw text', async () => {
@@ -93,12 +128,14 @@ describe('Table and Panel Conversion Tests', () => {
       // Check header row
       expect(headerRow.content).toHaveLength(3);
       expect(headerRow.content[0].type).toBe('tableHeader');
-      expect(headerRow.content[0].content[0].text).toBe('Header 1');
-      
-      // Check data row  
+      expect(headerRow.content[0].content[0].type).toBe('paragraph');
+      expect(headerRow.content[0].content[0].content[0].text).toBe('Header 1');
+
+      // Check data row
       expect(dataRow.content).toHaveLength(3);
       expect(dataRow.content[0].type).toBe('tableCell');
-      expect(dataRow.content[0].content[0].text).toBe('Data 1');
+      expect(dataRow.content[0].content[0].type).toBe('paragraph');
+      expect(dataRow.content[0].content[0].content[0].text).toBe('Data 1');
     });
   });
 
